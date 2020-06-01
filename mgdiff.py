@@ -3,6 +3,16 @@
 import mgparse
 
 
+# This function takes diagram d1 and a diagram list, returns the number of times d1 matches a diagram in diagram list
+def count_matches(d1,diagrams_lst):
+    nMatch = 0
+    d1_comp = mgparse.get_comparable(d1)
+    for d in diagrams_lst:
+        d_comp = mgparse.get_comparable(d)
+        if d_comp == d1_comp:
+            nMatch = nMatch +1
+    return nMatch
+
 if __name__ == "__main__":
 
     # Set up the command line parser
@@ -24,71 +34,102 @@ if __name__ == "__main__":
     # Get the list of all
     from pathlib import Path
 
+    rm_duplicates = True # Remove duplicate diagrams from A and B
+
     # Process all the matrix elements in dir_a
     diagrams_a = {} # Initially all diagrams in a, but will delete
                     # those in common with b
     counts_a = {} # Counts of diagrams per order in dir_a
+    nDuplicates_a = 0
     for pspath in Path(args.dir_a).glob('**/*.ps'):
         with pspath.open() as psfile:
             diags = mgparse.get_diagrams_from_file(psfile)
             for o in diags.keys():
-                if o in diagrams_a.keys():
-                    diagrams_a[o] += diags[o]
-                    counts_a[o] += len(diags[o])
-                else:
-                    diagrams_a[o] = diags[o]
-                    counts_a[o] = len(diags[o])
+                if o not in diagrams_a.keys():
+                    diagrams_a[o] = []
+                    counts_a[o] = 0
+                for da in diags[o]:
+                    if rm_duplicates:
+                        if count_matches(da,diagrams_a[o]) == 0:
+                            diagrams_a[o].append(da)
+                            counts_a[o] = counts_a[o]+1
+                        else:
+                            #print ( "Duplicate found. Order", o)
+                            nDuplicates_a = nDuplicates_a + 1
+                    else:
+                        diagrams_a[o].append(da)
+                        counts_a[o] = counts_a[o]+1
+    if rm_duplicates:
+        print ("Note: Found",nDuplicates_a,"duplicates in A")
+
+
+    # Process all the matrix elements in dir_b
+    diagrams_b_all = {} # All diagrams in b
+    counts_b = {} # Counts of diagrams per order in dir_b
+    nDuplicates_b = 0
+    for pspath in Path(args.dir_b).glob('**/*.ps'):
+        with pspath.open() as psfile:
+            diags = mgparse.get_diagrams_from_file(psfile)
+            for o in diags.keys():
+                if o not in diagrams_b_all.keys():
+                    diagrams_b_all[o] = []
+                    counts_b[o] = 0
+                for db in diags[o]:
+                    if rm_duplicates:
+                        if count_matches(db,diagrams_b_all[o]) == 0:
+                            diagrams_b_all[o].append(db)
+                            counts_b[o] = counts_b[o]+1
+                        else:
+                            nDuplicates_b = nDuplicates_b + 1
+                    else:
+                        diagrams_b_all[o].append(db)
+                        counts_b[o] = counts_b[o]+1
+    if rm_duplicates:
+        print ("Note: Found",nDuplicates_b,"duplicates in B")
+
 
     # Now reconcile against what we find in dir_b.  For purposes of
     # not exploding the memory, let's not read all of dir_b into
     # memory and then start making lists of common and unique
     # diagrams.  Instead, let's build the final list directly.
 
-    counts_b = {} # Number of diagrams in dir_b of different orders
     diagrams_common = {}  #In both
     diagrams_b = {} #Only in b
-    for pspath in Path(args.dir_b).glob('**/*.ps'):
-        with pspath.open() as psfile:
-            diags = mgparse.get_diagrams_from_file(psfile)
-            for o in diags.keys():
-                # Tally number of diagrams in b
-                if o in counts_b.keys():
-                    counts_b[o] += len(diags[o])
-                else:
-                    counts_b[o] = len(diags[o])
 
-                # Check the overlap between these diagrams and those in a
-                if o in diagrams_a.keys():
-                    # Check whether any of these diagrams match
-                    for db in diags[o]:
-                        db_comp = mgparse.get_comparable(db)
-                        # Check in a for this diagram
-                        for i,da in enumerate(diagrams_a[o]):
-                            da_comp = mgparse.get_comparable(da)
-                            if da_comp == db_comp:
-                                # Found the match!
-                                if o in diagrams_common.keys():
-                                    diagrams_common[o].append(db)
-                                else:
-                                    diagrams_common[o] = [db]
-                                # Since it's in both a and b, remove it
-                                # from diagrams_a so what's left at the
-                                # end will be just diagrams unique to a
-                                del diagrams_a[o][i]
-                                break
+    for o in diagrams_b_all.keys():
+
+        # Check the overlap between these diagrams and those in a
+        if o in diagrams_a.keys():
+            # Check whether any of these diagrams match
+            for db in diagrams_b_all[o]:
+                db_comp = mgparse.get_comparable(db)
+                # Check in a for this diagram
+                for i,da in enumerate(diagrams_a[o]):
+                    da_comp = mgparse.get_comparable(da)
+                    if da_comp == db_comp:
+                        # Found the match!
+                        if o in diagrams_common.keys():
+                            diagrams_common[o].append(db)
                         else:
-                            # Not found in a, so this is unique to b
-                            if o in diagrams_b.keys():
-                                diagrams_b[o].append(db)
-                            else:
-                                diagrams_b[o] = [db]
+                            diagrams_common[o] = [db]
+                        # Since it's in both a and b, remove it
+                        # from diagrams_a so what's left at the
+                        # end will be just diagrams unique to a
+                        del diagrams_a[o][i]
+                        break
                 else:
-                    # Diagrams_a is entirely missing this order of
-                    # diagrams.  Add it to the "b-only" list.
+                    # Not found in a, so this is unique to b
                     if o in diagrams_b.keys():
-                        diagrams_b[o] += diags[o]
+                        diagrams_b[o].append(db)
                     else:
-                        diagrams_b[o] = diags[o]
+                        diagrams_b[o] = [db]
+        else:
+            # Diagrams_a is entirely missing this order of
+            # diagrams.  Add it to the "b-only" list.
+            if o in diagrams_b.keys():
+                diagrams_b[o] += diagrams_b_all[o]
+            else:
+                diagrams_b[o] = diagrams_b_all[o]
 
     # Print some basic info about diagrams found in dir_a
     print("A = {}:".format(args.dir_a))
